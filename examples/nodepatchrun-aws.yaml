@@ -1,0 +1,77 @@
+apiVersion: nodepatcher.myorg.io/v1alpha1
+kind: NodePatchRun
+metadata:
+  name: patch-cycle-jan
+  namespace: nodepatcher-system
+spec:
+  provider:
+    type: aws
+    aws:
+      region: us-east-1
+      # Strongly recommended: a stable cluster identifier for tagging & orphan cleanup
+      clusterID: my-eks-prod
+      # If true (default), replacement must be in same AZ as old node
+      strictAZ: true
+      extraTags:
+        nodepatcher.io/team: platform
+        nodepatcher.io/purpose: node-ami-patching
+  # Optional: target only a subset of nodes (recommended in multi-ASG clusters)
+  nodeSelector:
+    matchLabels:
+      node.kubernetes.io/lifecycle: normal
+
+  # Keep control-plane nodes untouched (default true)
+  excludeControlPlane: true
+
+  # Two-iteration approach: operator will create a mixed-AZ 50/50 partition plan and run iteration 0 then 1.
+  # Within each iteration, it creates NodePatchTasks up to the per-class batch sizes.
+  batchSizeImportant: 1
+  batchSizeNonImportant: 3
+  maxConcurrentPerZone: 2
+
+  # Define "important pods" by label selectors (namespaced).
+  importantPodSelectors:
+    - namespace: kube-system
+      labelSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    - namespace: monitoring
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/name: prometheus
+
+  # Require certain daemon pods (per node) to be ready on the NEW node before draining old node.
+  requiredNodeDaemonPodSelectors:
+    - namespace: kube-system
+      labelSelector:
+        matchLabels:
+          k8s-app: aws-node
+    - namespace: kube-system
+      labelSelector:
+        matchLabels:
+          k8s-app: kube-proxy
+
+  # Stability gate: once replacement node is Ready and daemons are Ready, wait for important pods to be healthy for N time.
+  stability:
+    stableFor: 2m
+    importantOnly: true
+
+  # Transfer selected label keys/prefixes from old->new. Only transfers DELTA keys (won't overwrite existing).
+  labelTransfer:
+    prefixes:
+      - "topology.kubernetes.io/"
+      - "node.kubernetes.io/"
+      - "myorg.io/"
+    excludeKeys:
+      - "kubernetes.io/hostname"
+
+  autoscalerControl:
+    enabled: true
+    namespace: kube-system
+    deploymentSelector:
+      matchLabels:
+        app.kubernetes.io/name: aws-cluster-autoscaler
+
+  failurePolicy:
+    enabled: true
+    pauseAfterFailures: 1

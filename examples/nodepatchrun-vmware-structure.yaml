@@ -1,0 +1,21 @@
+# NOTE: This is a STRUCTURE example only. The shipped code implements the AWS provider today.
+# You can add a vmware provider by implementing pkg/provider.Provider and extending ProviderFactory.
+apiVersion: nodepatcher.myorg.io/v1alpha1
+kind: NodePatchRun
+metadata:
+  name: patch-cycle-vmware
+  namespace: nodepatcher-system
+spec:
+  provider:
+    type: vmware
+    # vmware:
+    #   vcenterURL: ...
+    #   cluster: ...
+    #   template: ...
+  batchSizeImportant: 1
+  batchSizeNonImportant: 2
+  importantPodSelectors:
+    - namespace: prod
+      labelSelector:
+        matchLabels:
+          app: payments-api
